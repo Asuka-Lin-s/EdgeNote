@@ -98,6 +98,49 @@ static const NoteColorPreset g_presets[COLOR_PRESET_COUNT] = {
 static HINSTANCE g_instance = NULL;
 static int g_noteCount = 0;
 static int g_nextColor = 1;
+static WNDPROC g_originalEditProc = NULL;
+
+static LRESULT CALLBACK EditProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
+    if (msg == WM_MOUSEWHEEL) {
+        int delta = GET_WHEEL_DELTA_WPARAM(wParam);
+        int notches = delta / WHEEL_DELTA;
+        UINT lines = 3;
+        int scrollLines;
+
+        if (notches == 0)
+            notches = delta > 0 ? 1 : -1;
+
+        SystemParametersInfoW(SPI_GETWHEELSCROLLLINES, 0, &lines, 0);
+
+        if (lines == WHEEL_PAGESCROLL) {
+            RECT rc;
+            HDC dc;
+            TEXTMETRICW tm;
+            int lineHeight = 18;
+            int pageLines;
+
+            GetClientRect(hwnd, &rc);
+            dc = GetDC(hwnd);
+            if (dc) {
+                if (GetTextMetricsW(dc, &tm))
+                    lineHeight = tm.tmHeight > 0 ? tm.tmHeight : 18;
+                ReleaseDC(hwnd, dc);
+            }
+
+            pageLines = (rc.bottom - rc.top) / lineHeight;
+            if (pageLines < 1) pageLines = 1;
+            scrollLines = -notches * pageLines;
+        } else {
+            if (lines < 1) lines = 3;
+            scrollLines = -notches * (int)lines;
+        }
+
+        SendMessageW(hwnd, EM_LINESCROLL, 0, scrollLines);
+        return 0;
+    }
+
+    return CallWindowProcW(g_originalEditProc, hwnd, msg, wParam, lParam);
+}
 
 static NoteState *note_from(HWND hwnd) {
     return (NoteState *)GetWindowLongPtrW(hwnd, GWLP_USERDATA);
@@ -606,6 +649,14 @@ static LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPara
 
         if (!n->edit) return -1;
 
+        if (!g_originalEditProc) {
+            g_originalEditProc = (WNDPROC)SetWindowLongPtrW(
+                n->edit, GWLP_WNDPROC, (LONG_PTR)EditProc
+            );
+        } else {
+            SetWindowLongPtrW(n->edit, GWLP_WNDPROC, (LONG_PTR)EditProc);
+        }
+
         SendMessageW(n->edit, EM_SETMARGINS,
                      EC_LEFTMARGIN | EC_RIGHTMARGIN,
                      MAKELPARAM(5, 5));
@@ -617,6 +668,14 @@ static LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPara
     case WM_SETFOCUS:
         if (n && n->edit) SetFocus(n->edit);
         return 0;
+
+    case WM_MOUSEWHEEL:
+        if (n && n->edit) {
+            SetFocus(n->edit);
+            SendMessageW(n->edit, WM_MOUSEWHEEL, wParam, lParam);
+            return 0;
+        }
+        break;
 
     case WM_ERASEBKGND:
         return 1;
