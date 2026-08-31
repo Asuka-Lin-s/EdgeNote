@@ -1,0 +1,41 @@
+name: Build EdgeNote EXE
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - 'src/**'
+      - '.github/workflows/build.yml'
+
+jobs:
+  build-windows-x64:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup MSVC x64
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+
+      - name: Build EdgeNote
+        shell: cmd
+        run: |
+          if not exist dist mkdir dist
+          cl /nologo /O2 /W3 /utf-8 /DUNICODE /D_UNICODE src\EdgeNote.c /Fe:dist\EdgeNote.exe /link /SUBSYSTEM:WINDOWS user32.lib gdi32.lib comdlg32.lib
+
+      - name: Show build output
+        shell: powershell
+        run: Get-ChildItem dist
+
+      - name: Upload EXE artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: EdgeNote-Win10-x64
+          path: dist/EdgeNote.exe
+          if-no-files-found: error
+          retention-days: 30
